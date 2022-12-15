@@ -1,96 +1,10 @@
-from typing import Any, Union, Literal
+from typing import Any, Literal
 
 import requests
 
+from ..constants import API_answer, API_URL, HEADERS, ASSETS
+from ..external.exchange_rate import get_exchange_rate
 
-# default type of API answer
-API_answer = dict[str: Any]
-# header for BinanceAPI
-HEADERS: dict[str, str] = {
-    "Accept": "*/*",
-    "Accept-Encoding": "gzip, deflate, br",
-    "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-    "Content-Length": "123",
-    "content-type": "application/json",
-    "Host": "p2p.binance.com",
-    "Origin": "https://p2p.binance.com",
-    "Pragma": "no-cache",
-    "TE": "Trailers",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:88.0) "
-        "Gecko/20100101 Firefox/88.0"
-}
-# BinanceAPI url
-API_URL: str = 'https://p2p.binance.com/bapi/c2c/v2/{api_type}/c2c/adv/'
-# Available binance P2P assets
-ASSETS: list[str] = ["USDT", "BTC", "BNB", "BUSD", "ETH"]
-# Available binance P2P fiats
-FIATS: list[str] = [
-    "AED", "AFN", "AMD", "ARS", "AUD", "AZN", "BDT", "BGN", "BHD", "BIF", "BND",
-    "BOB", "BRL", "CAD", "CHF", "CLP", "CNY", "COP", "CRC", "CZK", "DJF", "DKK",
-    "DOP", "DZD", "EGP", "ETB", "EUR", "GBP", "GEL", "GHS", "GNF", "GTQ", "HKD",
-    "HNL", "HRK", "HUF", "IDR", "INR", "ISK", "JOD", "JPY", "KES", "KGS", "KHR",
-    "KMF", "KWD", "KZT", "LAK", "LBP", "LKR", "LYD", "MAD", "MDL", "MGA", "MMK",
-    "MNT", "MOP", "MXN", "NGN", "NIO", "NOK", "NPR", "NZD", "OMR", "PAB", "PEN",
-    "PGK", "PHP", "PKR", "PLN", "PYG", "QAR", "RON", "RSD", "RUB", "RWF", "SAR",
-    "SCR", "SDG", "SEK", "THB", "TJS", "TMT", "TND", "TRY", "TWD", "TZS", "UAH",
-    "UGX", "USD", "UYU", "UZS", "VES", "VND", "XAF", "XOF", "YER", "ZAR",
-]
-
-def get_exchange_rate(from_currency: str='KZT', 
-    to_currency: str='RUB') -> API_answer:
-    """Returns currency value from one valute to another
-
-    :param from_currency: first valute char code (default: 'KZT') 
-    :param to_currency: second valute char code (default: 'RUB')
-
-    :returns: data with currency rate
-    """
-    from_currency = from_currency.upper()
-    to_currency = to_currency.upper()
-    data = {
-        'from': from_currency,
-        'to': to_currency,
-    }
-
-    if from_currency not in FIATS or to_currency not in FIATS:
-        data['succes'] = False
-        return data
-
-    if from_currency == to_currency:
-        data['rate'] = 1.0
-        data['success'] = True
-        return data
-
-    API_URL: str = "https://currency-exchange.p.rapidapi.com/exchange"
-
-    querystring = data.copy()
-    querystring['q'] = "1.0"
-    headers = {
-        "X-RapidAPI-Key": "e56577286emshfab6972cb48107ap1e3e26jsn1fa773c36844",
-        "X-RapidAPI-Host": "currency-exchange.p.rapidapi.com"
-    }
-
-    try:
-        response = requests.request(
-            method="GET", 
-            url=API_URL,
-            headers=headers, 
-            params=querystring,
-            timeout=7
-        )
-        if response.ok:
-            try:
-                data['rate'] = float(response.text)
-            except (ValueError, TypeError):
-                data['rate'] = None
-            else:
-                data['success'] = True
-    except requests.exceptions.ReadTimeout:
-        data['success'] = False
-
-    return data
 
 def get_paytypes(char_code: str) -> API_answer:
     """Availiable Binance payment methods for p2p trading
@@ -106,21 +20,22 @@ def get_paytypes(char_code: str) -> API_answer:
             API_URL.format(api_type='public') + 'filter-conditions', 
             headers=HEADERS, 
             json={'fiat': char_code.upper()}
-        ).json()
+        )
         if not response.ok:
             raise requests.exceptions.RequestException
-        for trade_method in response['data']['tradeMethods']:
+        for trade_method in response.json()['data']['tradeMethods']:
             paytypes.append(trade_method['identifier'])
         if not len(paytypes):
             raise ValueError
         data['paytypes'] = paytypes
         data['succes'] = True
-    except Exception:
+    except Exception as ex:
+        print(ex)
         data['success'] = False
     return data
 
 def get_advs(fiat: str, asset: str, trade_type: Literal["BUY", "SELL"], 
-    pay_types: list[str]=[], trans_amount: Union[str, None]=None, page: int=1,
+    pay_types: list[str]=[], trans_amount: str | None = None, page: int=1,
     rows: int=10) -> API_answer:
     """Actual bids from BinanceP2P
 
@@ -181,7 +96,7 @@ def _weighted_mean_price(data: Any, price_key='price',
         sum(float(adv[weight_key]) for adv in data['advs'])
 
 def get_best_exchange_way(fiat_1: str, fiat_2: str, pay_types_1: list[str]=[],
-    pay_types_2: list[str]=[], trans_amount: Union[str, None]=None, 
+    pay_types_2: list[str]=[], trans_amount: str | None = None, 
     rows: int=5) -> API_answer:
     """Show best exchange way for required pair of curriencies
 
@@ -257,10 +172,3 @@ def get_best_exchange_way(fiat_1: str, fiat_2: str, pay_types_1: list[str]=[],
         data['succes'] = False
 
     return data
-
-
-
-if __name__ == '__main__':
-    for fiat in FIATS:
-        rate = get_exchange_rate('RUB', 'KZT')
-        print(rate)
